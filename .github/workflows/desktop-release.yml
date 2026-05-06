@@ -59,7 +59,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
-          path: newIDE/electron-app/dist/**
+          path: |
+            newIDE/electron-app/dist/*.dmg
+            newIDE/electron-app/dist/*.exe
+            newIDE/electron-app/dist/*.zip
+            newIDE/electron-app/dist/*.blockmap
+            newIDE/electron-app/dist/latest*.yml
+            newIDE/electron-app/dist/builder-debug.yml
           if-no-files-found: error
 
   publish-release:
@@ -95,4 +101,8 @@ jobs:
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           generate_release_notes: true
           files: |
-            release-artifacts/**/*
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.blockmap
+            release-artifacts/**/*.yml
