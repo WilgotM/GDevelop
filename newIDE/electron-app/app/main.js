@@ -1,5 +1,7 @@
 const electron = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const child_process = require('child_process');
 const app = electron.app; // Module to control application life.
 const BrowserWindow = electron.BrowserWindow; // Module to create native browser window.
@@ -518,6 +520,77 @@ app.on('ready', function() {
     const result = await downloadLocalFile(url, outputPath);
     return result;
   });
+
+  ipcMain.handle(
+    'codex-exec',
+    async (event, { prompt, model, reasoningEffort }) => {
+      const outputPath = path.join(
+        os.tmpdir(),
+        `gdevelop-codex-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.txt`
+      );
+      const codexCommand = process.platform === 'win32' ? 'codex.cmd' : 'codex';
+      const extraPathEntries =
+        process.platform === 'win32'
+          ? [
+              path.join(os.homedir(), 'AppData', 'Roaming', 'npm'),
+              process.env.PATH || '',
+            ]
+          : [
+              path.join(os.homedir(), '.npm-global', 'bin'),
+              '/opt/homebrew/bin',
+              '/usr/local/bin',
+              process.env.PATH || '',
+            ];
+      const args = [
+        'exec',
+        '-m',
+        model || 'gpt-5.5',
+        '-c',
+        `model_reasoning_effort="${reasoningEffort || 'medium'}"`,
+        '--output-last-message',
+        outputPath,
+        '-',
+      ];
+
+      await new Promise((resolve, reject) => {
+        const child = child_process.spawn(codexCommand, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: {
+            ...process.env,
+            PATH: extraPathEntries.filter(Boolean).join(path.delimiter),
+          },
+        });
+        let stderr = '';
+
+        child.stderr.on('data', data => {
+          stderr += data.toString();
+        });
+        child.on('error', reject);
+        child.on('close', code => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(
+              new Error(
+                stderr ||
+                  `Codex exited with code ${code || 'unknown'}. Is Codex installed and logged in?`
+              )
+            );
+          }
+        });
+        child.stdin.end(prompt || '');
+      });
+
+      try {
+        return fs.readFileSync(outputPath, 'utf8');
+      } finally {
+        fs.unlink(outputPath, () => {});
+      }
+    }
+  );
   ipcMain.handle(
     'local-file-save-from-arraybuffer',
     async (event, arrayBuffer, outputPath) => {
