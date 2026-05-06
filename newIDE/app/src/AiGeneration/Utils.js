@@ -906,4 +906,7 @@ export type NewAiRequestOptions = {|
   mode: 'chat' | 'agent' | 'orchestrator',
   userRequest: string,
   aiConfigurationPresetId: string,
+  aiProvider?: 'gdevelop' | 'codex',
+  codexModel?: string,
+  codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh',
 |};

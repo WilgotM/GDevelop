@@ -463,19 +463,23 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
             if (!newAiRequestOptions) return;
             console.info('Starting a new AI request...');
 
-            if (!profile) {
-              onOpenCreateAccountDialog();
-              startNewAiRequest(null);
-              return;
-            }
-
             // Read the options and reset them (to avoid launching the same request twice).
             const {
               mode,
               userRequest,
               aiConfigurationPresetId,
+              aiProvider,
+              codexModel,
+              codexReasoningEffort,
             } = newAiRequestOptions;
             startNewAiRequest(null);
+            const isLocalCodexRequest = aiProvider === 'codex';
+
+            if (!profile && !isLocalCodexRequest) {
+              onOpenCreateAccountDialog();
+              return;
+            }
+            const userId = profile ? profile.id : 'local-codex-user';
 
             // Ensure the user has enough credits to pay for the request, or ask them
             // to buy some more.
@@ -512,17 +516,24 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
               setSendingAiRequest(null, true);
               setIsSendingUserMessage(true);
 
-              const preparedAiUserContent = await prepareAiUserContent({
-                getAuthorizationHeader,
-                userId: profile.id,
-                simplifiedProjectJson,
-                projectSpecificExtensionsSummaryJson,
-                eventsJson: null,
-              });
+              const preparedAiUserContent = isLocalCodexRequest
+                ? {
+                    gameProjectJsonUserRelativeKey: null,
+                    gameProjectJson: simplifiedProjectJson,
+                    projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+                    projectSpecificExtensionsSummaryJson,
+                  }
+                : await prepareAiUserContent({
+                    getAuthorizationHeader,
+                    userId,
+                    simplifiedProjectJson,
+                    projectSpecificExtensionsSummaryJson,
+                    eventsJson: null,
+                  });
 
               const aiRequest = await createAiRequest(getAuthorizationHeader, {
                 userRequest: userRequest,
-                userId: profile.id,
+                userId,
                 gameProjectJsonUserRelativeKey:
                   preparedAiUserContent.gameProjectJsonUserRelativeKey,
                 gameProjectJson: preparedAiUserContent.gameProjectJson,
@@ -544,6 +555,9 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
                     : AI_CHAT_TOOLS_VERSION,
                 aiConfiguration: {
                   presetId: aiConfigurationPresetId,
+                  provider: aiProvider || 'gdevelop',
+                  model: codexModel,
+                  reasoningEffort: codexReasoningEffort,
                 },
               });
 
@@ -620,14 +634,25 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
           createdProject,
           editorFunctionCallResults,
           mode,
+          aiProvider,
+          codexModel,
+          codexReasoningEffort,
         }: {|
           userMessage: string,
           createdSceneNames?: Array<string>,
           createdProject?: ?gdProject,
           editorFunctionCallResults: Array<EditorFunctionCallResult>,
           mode?: 'chat' | 'agent' | 'orchestrator',
+          aiProvider?: 'gdevelop' | 'codex',
+          codexModel?: string,
+          codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh',
         |}) => {
-          if (!profile || !selectedAiRequestId || !selectedAiRequest) return;
+          if (!selectedAiRequestId || !selectedAiRequest) return;
+          const isLocalCodexRequest =
+            selectedAiRequest.aiConfiguration &&
+            selectedAiRequest.aiConfiguration.provider === 'codex';
+          if (!profile && !isLocalCodexRequest) return;
+          const userId = profile ? profile.id : 'local-codex-user';
 
           if (isSendingAiRequest(selectedAiRequestId)) {
             console.info(
@@ -712,13 +737,20 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
                 )
               : null;
 
-            const preparedAiUserContent = await prepareAiUserContent({
-              getAuthorizationHeader,
-              userId: profile.id,
-              simplifiedProjectJson,
-              projectSpecificExtensionsSummaryJson,
-              eventsJson: null,
-            });
+            const preparedAiUserContent = isLocalCodexRequest
+              ? {
+                  gameProjectJsonUserRelativeKey: null,
+                  gameProjectJson: simplifiedProjectJson,
+                  projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+                  projectSpecificExtensionsSummaryJson,
+                }
+              : await prepareAiUserContent({
+                  getAuthorizationHeader,
+                  userId,
+                  simplifiedProjectJson,
+                  projectSpecificExtensionsSummaryJson,
+                  eventsJson: null,
+                });
 
             // If we're updating the request, following a function call to initialize the project,
             // pause the request, so that suggestions can be given by the agent.
@@ -745,7 +777,7 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
 
             const aiRequest: AiRequest = await retryIfFailed({ times: 2 }, () =>
               addMessageToAiRequest(getAuthorizationHeader, {
-                userId: profile.id,
+                userId,
                 aiRequestId: selectedAiRequestId,
                 functionCallOutputs,
                 gameProjectJsonUserRelativeKey:
@@ -771,6 +803,26 @@ export const AskAiEditor: React.ComponentType<Props> = React.memo<Props>(
                     : mode === 'chat'
                     ? AI_CHAT_TOOLS_VERSION
                     : undefined,
+                aiConfiguration: {
+                  presetId:
+                    (selectedAiRequest.aiConfiguration &&
+                      selectedAiRequest.aiConfiguration.presetId) ||
+                    'default',
+                  provider:
+                    aiProvider ||
+                    (selectedAiRequest.aiConfiguration &&
+                      selectedAiRequest.aiConfiguration.provider) ||
+                    'gdevelop',
+                  model:
+                    codexModel ||
+                    (selectedAiRequest.aiConfiguration &&
+                      selectedAiRequest.aiConfiguration.model),
+                  reasoningEffort:
+                    codexReasoningEffort ||
+                    (selectedAiRequest.aiConfiguration &&
+                      selectedAiRequest.aiConfiguration.reasoningEffort),
+                },
+                previousAiRequest: selectedAiRequest,
               })
             );
             updateAiRequest(aiRequest.id, () => aiRequest);

@@ -9,6 +9,7 @@ import {
   ensureIsObject,
   ensureObjectHasProperty,
 } from '../DataValidator';
+import { runLocalCodexAiRequest } from '../LocalCodex';
 
 export type Environment = 'staging' | 'live';
 
@@ -98,8 +99,15 @@ export type AiRequestMessage =
   | AiRequestUserMessage
   | AiRequestFunctionCallOutput;
 
+export type AiProvider = 'gdevelop' | 'codex';
+
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
 export type AiConfiguration = {
   presetId: string,
+  provider?: AiProvider,
+  model?: string,
+  reasoningEffort?: CodexReasoningEffort,
 };
 
 type AiRequestToolOptions = {
@@ -401,6 +409,18 @@ export const createAiRequest = async (
     toolsVersion: string,
   |}
 ): Promise<AiRequest> => {
+  if (aiConfiguration.provider === 'codex') {
+    return runLocalCodexAiRequest({
+      userId,
+      userRequest,
+      gameProjectJson,
+      projectSpecificExtensionsSummaryJson,
+      mode,
+      aiConfiguration,
+      gameId,
+    });
+  }
+
   const authorizationHeader = await getAuthorizationHeader();
   const response = await apiClient.post(
     '/ai-request',
@@ -414,7 +434,9 @@ export const createAiRequest = async (
       payWithCredits: !!payWithCredits,
       payWithAiCredits: !payWithCredits,
       mode,
-      aiConfiguration,
+      aiConfiguration: {
+        presetId: aiConfiguration.presetId,
+      },
       gameId,
       projectVersionIdBeforeMessage,
       fileMetadata,
@@ -454,6 +476,8 @@ export const addMessageToAiRequest = async (
     paused,
     mode,
     toolsVersion,
+    aiConfiguration,
+    previousAiRequest,
   }: {|
     userId: string,
     aiRequestId: string,
@@ -469,8 +493,24 @@ export const addMessageToAiRequest = async (
     paused?: boolean,
     mode?: 'chat' | 'agent' | 'orchestrator',
     toolsVersion?: string,
+    aiConfiguration?: AiConfiguration,
+    previousAiRequest?: AiRequest,
   |}
 ): Promise<AiRequest> => {
+  if (aiConfiguration && aiConfiguration.provider === 'codex') {
+    return runLocalCodexAiRequest({
+      userId,
+      userRequest,
+      gameProjectJson,
+      projectSpecificExtensionsSummaryJson,
+      mode: mode || 'chat',
+      aiConfiguration,
+      gameId,
+      aiRequestId,
+      previousAiRequest,
+    });
+  }
+
   const authorizationHeader = await getAuthorizationHeader();
   const response = await apiClient.post(
     `/ai-request/${aiRequestId}/action/add-message`,

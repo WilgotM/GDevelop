@@ -236,19 +236,26 @@ export const AskAiStandAloneForm = ({
         if (!newAiRequestOptions) return;
         console.info('Starting a new AI request...');
 
-        if (!profile) {
-          onOpenCreateAccountDialog();
-          startNewAiRequest(null);
-          return;
-        }
-
         // Ensure the Ask AI pane is closed, to avoid multiple requests being sent
         // at the same time from the editor and the standalone form.
         onCloseAskAi();
 
         // Read the options and reset them (to avoid launching the same request twice).
-        const { userRequest, aiConfigurationPresetId } = newAiRequestOptions;
+        const {
+          userRequest,
+          aiConfigurationPresetId,
+          aiProvider,
+          codexModel,
+          codexReasoningEffort,
+        } = newAiRequestOptions;
         startNewAiRequest(null);
+        const isLocalCodexRequest = aiProvider === 'codex';
+
+        if (!profile && !isLocalCodexRequest) {
+          onOpenCreateAccountDialog();
+          return;
+        }
+        const userId = profile ? profile.id : 'local-codex-user';
 
         // Ensure the user has enough credits to pay for the request, or ask them
         // to buy some more.
@@ -275,17 +282,24 @@ export const AskAiStandAloneForm = ({
           setSendingAiRequest(null, true);
           setIsSendingUserMessage(true);
 
-          const preparedAiUserContent = await prepareAiUserContent({
-            getAuthorizationHeader,
-            userId: profile.id,
-            simplifiedProjectJson: null,
-            projectSpecificExtensionsSummaryJson: null,
-            eventsJson: null,
-          });
+          const preparedAiUserContent = isLocalCodexRequest
+            ? {
+                gameProjectJsonUserRelativeKey: null,
+                gameProjectJson: null,
+                projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+                projectSpecificExtensionsSummaryJson: null,
+              }
+            : await prepareAiUserContent({
+                getAuthorizationHeader,
+                userId,
+                simplifiedProjectJson: null,
+                projectSpecificExtensionsSummaryJson: null,
+                eventsJson: null,
+              });
 
           const aiRequest = await createAiRequest(getAuthorizationHeader, {
             userRequest: userRequest,
-            userId: profile.id,
+            userId,
             gameProjectJsonUserRelativeKey:
               preparedAiUserContent.gameProjectJsonUserRelativeKey,
             gameProjectJson: preparedAiUserContent.gameProjectJson,
@@ -301,6 +315,9 @@ export const AskAiStandAloneForm = ({
             toolsVersion: AI_ORCHESTRATOR_TOOLS_VERSION,
             aiConfiguration: {
               presetId: aiConfigurationPresetId,
+              provider: aiProvider || 'gdevelop',
+              model: codexModel,
+              reasoningEffort: codexReasoningEffort,
             },
           });
 
@@ -381,8 +398,12 @@ export const AskAiStandAloneForm = ({
       createdProject?: ?gdProject,
       editorFunctionCallResults: Array<EditorFunctionCallResult>,
     |}) => {
-      if (!profile || !aiRequestIdForForm || !aiRequestForForm || isLoading)
-        return;
+      if (!aiRequestIdForForm || !aiRequestForForm || isLoading) return;
+      const isLocalCodexRequest =
+        aiRequestForForm.aiConfiguration &&
+        aiRequestForForm.aiConfiguration.provider === 'codex';
+      if (!profile && !isLocalCodexRequest) return;
+      const userId = profile ? profile.id : 'local-codex-user';
 
       // Read the results from the editor that applied the function calls.
       // and transform them into the output that will be stored on the AI request.
@@ -428,17 +449,24 @@ export const AskAiStandAloneForm = ({
             )
           : null;
 
-        const preparedAiUserContent = await prepareAiUserContent({
-          getAuthorizationHeader,
-          userId: profile.id,
-          simplifiedProjectJson,
-          projectSpecificExtensionsSummaryJson,
-          eventsJson: null,
-        });
+        const preparedAiUserContent = isLocalCodexRequest
+          ? {
+              gameProjectJsonUserRelativeKey: null,
+              gameProjectJson: simplifiedProjectJson,
+              projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+              projectSpecificExtensionsSummaryJson,
+            }
+          : await prepareAiUserContent({
+              getAuthorizationHeader,
+              userId,
+              simplifiedProjectJson,
+              projectSpecificExtensionsSummaryJson,
+              eventsJson: null,
+            });
 
         const aiRequest: AiRequest = await retryIfFailed({ times: 2 }, () =>
           addMessageToAiRequest(getAuthorizationHeader, {
-            userId: profile.id,
+            userId,
             aiRequestId: aiRequestIdForForm,
             functionCallOutputs,
             gameProjectJsonUserRelativeKey:
@@ -459,6 +487,23 @@ export const AskAiStandAloneForm = ({
             paused: false,
             mode: aiRequestModeForForm,
             toolsVersion: AI_ORCHESTRATOR_TOOLS_VERSION,
+            aiConfiguration: {
+              presetId:
+                (aiRequestForForm.aiConfiguration &&
+                  aiRequestForForm.aiConfiguration.presetId) ||
+                'default',
+              provider:
+                (aiRequestForForm.aiConfiguration &&
+                  aiRequestForForm.aiConfiguration.provider) ||
+                'gdevelop',
+              model:
+                aiRequestForForm.aiConfiguration &&
+                aiRequestForForm.aiConfiguration.model,
+              reasoningEffort:
+                aiRequestForForm.aiConfiguration &&
+                aiRequestForForm.aiConfiguration.reasoningEffort,
+            },
+            previousAiRequest: aiRequestForForm,
           })
         );
         updateAiRequest(aiRequest.id, () => aiRequest);

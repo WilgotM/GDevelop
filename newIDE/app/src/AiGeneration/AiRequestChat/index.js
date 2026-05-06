@@ -7,9 +7,11 @@ import { ColumnStackLayout, LineStackLayout } from '../../UI/Layout';
 import Text from '../../UI/Text';
 import { Trans, t } from '@lingui/macro';
 import {
+  type AiProvider,
   type AiRequest,
   type AiRequestMessage,
   type AiRequestMessageAssistantFunctionCall,
+  type CodexReasoningEffort,
 } from '../../Utils/GDevelopServices/Generation';
 import RaisedButton from '../../UI/RaisedButton';
 import { CompactTextAreaFieldWithControls } from '../../UI/CompactTextAreaFieldWithControls';
@@ -62,6 +64,21 @@ import Stop from '../../UI/CustomSvgIcons/Stop';
 
 const TOO_MANY_USER_MESSAGES_WARNING_COUNT = 15;
 const TOO_MANY_USER_MESSAGES_ERROR_COUNT = 20;
+
+const codexModelIds = [
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex',
+  'gpt-5.2',
+];
+
+const codexReasoningEfforts: Array<CodexReasoningEffort> = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+];
 
 const styles = {
   chatScrollView: {
@@ -278,6 +295,91 @@ const getSendButtonLabelAndIcon = ({
     : { label: <Trans>Send</Trans>, icon: <Send fontSize="small" /> };
 };
 
+const CodexConfigurationControls = ({
+  aiProvider,
+  setAiProvider,
+  codexModel,
+  setCodexModel,
+  codexReasoningEffort,
+  setCodexReasoningEffort,
+  disabled,
+}: {|
+  aiProvider: AiProvider,
+  setAiProvider: AiProvider => void,
+  codexModel: string,
+  setCodexModel: string => void,
+  codexReasoningEffort: CodexReasoningEffort,
+  setCodexReasoningEffort: CodexReasoningEffort => void,
+  disabled?: boolean,
+|}): React.Node => (
+  <LineStackLayout noMargin alignItems="center">
+    <CompactSelectField
+      disabled={disabled}
+      value={aiProvider}
+      onChange={value => {
+        if (value === 'gdevelop' || value === 'codex') setAiProvider(value);
+      }}
+    >
+      <SelectOption
+        key="codex"
+        value="codex"
+        label="Codex"
+        shouldNotTranslate
+      />
+      <SelectOption
+        key="gdevelop"
+        value="gdevelop"
+        label="GDevelop"
+        shouldNotTranslate
+      />
+    </CompactSelectField>
+    <CompactSelectField
+      disabled={disabled || aiProvider !== 'codex'}
+      value={codexModel}
+      onChange={value => setCodexModel(value)}
+    >
+      {codexModelIds.map(modelId => (
+        <SelectOption
+          key={modelId}
+          value={modelId}
+          label={modelId}
+          shouldNotTranslate
+        />
+      ))}
+    </CompactSelectField>
+    <CompactSelectField
+      disabled={disabled || aiProvider !== 'codex'}
+      value={codexReasoningEffort}
+      onChange={value => {
+        if (
+          value === 'low' ||
+          value === 'medium' ||
+          value === 'high' ||
+          value === 'xhigh'
+        ) {
+          setCodexReasoningEffort(value);
+        }
+      }}
+    >
+      {codexReasoningEfforts.map(reasoningEffort => (
+        <SelectOption
+          key={reasoningEffort}
+          value={reasoningEffort}
+          label={
+            reasoningEffort === 'low'
+              ? t`Low reasoning`
+              : reasoningEffort === 'medium'
+              ? t`Medium reasoning`
+              : reasoningEffort === 'high'
+              ? t`High reasoning`
+              : t`Extra reasoning`
+          }
+        />
+      ))}
+    </CompactSelectField>
+  </LineStackLayout>
+);
+
 const actionsOnExistingProject = [
   t`Add solid rocks that falls from the sky at a random position around the player every 0.5 seconds`,
   t`Add a score and display it on the screen`,
@@ -320,10 +422,16 @@ type Props = {|
     mode: 'chat' | 'agent' | 'orchestrator',
     userRequest: string,
     aiConfigurationPresetId: string,
+    aiProvider?: AiProvider,
+    codexModel?: string,
+    codexReasoningEffort?: CodexReasoningEffort,
   |}) => void,
   onSendUserMessage: ({|
     userMessage: string,
     mode: 'chat' | 'agent' | 'orchestrator',
+    aiProvider?: AiProvider,
+    codexModel?: string,
+    codexReasoningEffort?: CodexReasoningEffort,
   |}) => Promise<void>,
   onSendFeedback: (
     aiRequestId: string,
@@ -442,6 +550,12 @@ export const AiRequestChat: React.ComponentType<{
       aiConfigurationPresetId,
       setAiConfigurationPresetId,
     ] = React.useState<string | null>(null);
+    const [aiProvider, setAiProvider] = React.useState<AiProvider>('codex');
+    const [codexModel, setCodexModel] = React.useState<string>('gpt-5.5');
+    const [
+      codexReasoningEffort,
+      setCodexReasoningEffort,
+    ] = React.useState<CodexReasoningEffort>('medium');
 
     React.useEffect(
       () => {
@@ -685,6 +799,9 @@ export const AiRequestChat: React.ComponentType<{
           userRequest: userRequestTextPerAiRequestId[''],
           aiConfigurationPresetId: chosenOrDefaultAiConfigurationPresetId,
           mode: selectedMode,
+          aiProvider,
+          codexModel,
+          codexReasoningEffort,
         });
       },
       [
@@ -697,6 +814,9 @@ export const AiRequestChat: React.ComponentType<{
         showConfirmation,
         selectedMode,
         standAloneForm,
+        aiProvider,
+        codexModel,
+        codexReasoningEffort,
       ]
     );
 
@@ -710,6 +830,9 @@ export const AiRequestChat: React.ComponentType<{
         return onSendUserMessage({
           userMessage: userRequestTextPerAiRequestId[aiRequestId] || '',
           mode: selectedMode,
+          aiProvider,
+          codexModel,
+          codexReasoningEffort,
         });
       },
       [
@@ -719,6 +842,9 @@ export const AiRequestChat: React.ComponentType<{
         scrollToBottom,
         cannotContinue,
         selectedMode,
+        aiProvider,
+        codexModel,
+        codexReasoningEffort,
       ]
     );
 
@@ -817,19 +943,34 @@ export const AiRequestChat: React.ComponentType<{
                           alignItems="flex-end"
                           justifyContent="space-between"
                         >
-                          <AiConfigurationPresetSelector
-                            chosenOrDefaultAiConfigurationPresetId={
-                              chosenOrDefaultAiConfigurationPresetId
-                            }
-                            setAiConfigurationPresetId={
-                              setAiConfigurationPresetId
-                            }
-                            aiConfigurationPresetsWithAvailability={
-                              aiConfigurationPresetsWithAvailability
-                            }
-                            aiRequestMode={selectedMode}
-                            disabled={isWorking}
-                          />
+                          <LineStackLayout noMargin alignItems="center">
+                            <CodexConfigurationControls
+                              aiProvider={aiProvider}
+                              setAiProvider={setAiProvider}
+                              codexModel={codexModel}
+                              setCodexModel={setCodexModel}
+                              codexReasoningEffort={codexReasoningEffort}
+                              setCodexReasoningEffort={
+                                setCodexReasoningEffort
+                              }
+                              disabled={isWorking}
+                            />
+                            {aiProvider === 'gdevelop' && (
+                              <AiConfigurationPresetSelector
+                                chosenOrDefaultAiConfigurationPresetId={
+                                  chosenOrDefaultAiConfigurationPresetId
+                                }
+                                setAiConfigurationPresetId={
+                                  setAiConfigurationPresetId
+                                }
+                                aiConfigurationPresetsWithAvailability={
+                                  aiConfigurationPresetsWithAvailability
+                                }
+                                aiRequestMode={selectedMode}
+                                disabled={isWorking}
+                              />
+                            )}
+                          </LineStackLayout>
                           <RaisedButton
                             color="primary"
                             icon={sendButtonIcon}
@@ -1171,40 +1312,51 @@ export const AiRequestChat: React.ComponentType<{
               justifyContent="space-between"
             >
               <Column noMargin>
-                <CompactSelectField
-                  disabled={isWorking}
-                  value={selectedMode}
-                  onChange={value => {
-                    if (
-                      value !== 'chat' &&
-                      value !== 'agent' &&
-                      value !== 'orchestrator'
-                    ) {
-                      return;
+                <LineStackLayout noMargin alignItems="center">
+                  <CompactSelectField
+                    disabled={isWorking}
+                    value={selectedMode}
+                    onChange={value => {
+                      if (
+                        value !== 'chat' &&
+                        value !== 'agent' &&
+                        value !== 'orchestrator'
+                      ) {
+                        return;
+                      }
+                      setSelectedMode(value);
+                    }}
+                    renderOptionIcon={className =>
+                      selectedMode === 'chat' ? (
+                        <HelpQuestion className={className} />
+                      ) : (
+                        <Hammer className={className} />
+                      )
                     }
-                    setSelectedMode(value);
-                  }}
-                  renderOptionIcon={className =>
-                    selectedMode === 'chat' ? (
-                      <HelpQuestion className={className} />
-                    ) : (
-                      <Hammer className={className} />
-                    )
-                  }
-                  rounded
-                >
-                  <SelectOption key="chat" value="chat" label={t`Ask`} />
-                  <SelectOption
-                    key="agent"
-                    value="agent"
-                    label={t`Simple change`}
+                    rounded
+                  >
+                    <SelectOption key="chat" value="chat" label={t`Ask`} />
+                    <SelectOption
+                      key="agent"
+                      value="agent"
+                      label={t`Simple change`}
+                    />
+                    <SelectOption
+                      key="orchestrator"
+                      value="orchestrator"
+                      label={t`Build`}
+                    />
+                  </CompactSelectField>
+                  <CodexConfigurationControls
+                    aiProvider={aiProvider}
+                    setAiProvider={setAiProvider}
+                    codexModel={codexModel}
+                    setCodexModel={setCodexModel}
+                    codexReasoningEffort={codexReasoningEffort}
+                    setCodexReasoningEffort={setCodexReasoningEffort}
+                    disabled={isWorking}
                   />
-                  <SelectOption
-                    key="orchestrator"
-                    value="orchestrator"
-                    label={t`Build`}
-                  />
-                </CompactSelectField>
+                </LineStackLayout>
               </Column>
               <Column noMargin>
                 {isForAnotherProjectText || errorText || priceAndRequestsText}
